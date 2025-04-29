@@ -10,6 +10,9 @@ const openai = new OpenAI({
 // Model to use for embeddings
 const EMBEDDING_MODEL = "text-embedding-3-small";
 
+// Batch size for processing embeddings to reduce memory usage
+const BATCH_SIZE = 1; // Process one chunk at a time to minimize memory usage
+
 /**
  * Generate embeddings for a batch of texts using OpenAI's text-embedding-3-small model
  * @param texts Array of text strings to embed
@@ -17,13 +20,33 @@ const EMBEDDING_MODEL = "text-embedding-3-small";
  */
 export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   try {
-    const response = await openai.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: texts,
-    });
+    // Process in small batches to reduce memory usage
+    const embeddings: number[][] = [];
 
-    // Extract and return the embedding vectors
-    return response.data.map(item => item.embedding);
+    // Process texts in batches
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batchTexts = texts.slice(i, i + BATCH_SIZE);
+      console.log(`Processing embedding batch ${i / BATCH_SIZE + 1} of ${Math.ceil(texts.length / BATCH_SIZE)}`);
+
+      const response = await openai.embeddings.create({
+        model: EMBEDDING_MODEL,
+        input: batchTexts,
+      });
+
+      // Extract embeddings from response
+      const batchEmbeddings = response.data.map(item => item.embedding);
+      embeddings.push(...batchEmbeddings);
+
+      // Explicitly help garbage collection
+      response.data.length = 0;
+
+      // Add a small delay between batches to allow for GC
+      if (i + BATCH_SIZE < texts.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    return embeddings;
   } catch (error) {
     console.error("Error generating embeddings:", error);
     throw new Error(`Failed to generate embeddings: ${error}`);

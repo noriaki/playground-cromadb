@@ -2,10 +2,15 @@
 import { getOpenAIApiKey } from "./config";
 import { createChromaClient, checkChromaHealth } from "./db/chroma-client";
 import { getOrCreateCollection, upsertDocuments } from "./db/collections";
-import { generateEmbeddings } from "./embedding/openai";
-import { findMarkdownFiles, loadMarkdownFiles } from "./markdown/loader";
-import { processMarkdown } from "./markdown/parser";
+import { generateEmbeddings, generateEmbedding } from "./embedding/openai";
+import {
+  findMarkdownFiles,
+  createMarkdownFileStream,
+  processMarkdownFileByChunk
+} from "./markdown/loader";
+import { processMarkdown, markdownToText, chunkText } from "./markdown/parser";
 import { searchSimilarDocuments, formatSearchResults } from "./search/query";
+import * as fs from "fs";
 
 // Default directory for markdown files
 const MARKDOWN_DIR = "data/markdown";
@@ -16,6 +21,7 @@ const MARKDOWN_DIR = "data/markdown";
 async function processMarkdownFiles() {
   try {
     console.log("Starting ChromaDB with OpenAI embeddings for Markdown files...");
+    console.log("Using memory-optimized streaming approach to prevent heap errors");
 
     // 1. Load configuration and environment variables
     const apiKey = getOpenAIApiKey();
@@ -34,7 +40,7 @@ async function processMarkdownFiles() {
     const collection = await getOrCreateCollection(client);
     console.log(`Collection '${collection.name}' ready`);
 
-    // 4. Load, parse, and chunk Markdown files
+    // 4. Find Markdown files
     const markdownPaths = await findMarkdownFiles(MARKDOWN_DIR);
     console.log(`Found ${markdownPaths.length} Markdown files`);
 
@@ -43,37 +49,112 @@ async function processMarkdownFiles() {
       return;
     }
 
-    const markdownFiles = loadMarkdownFiles(markdownPaths);
-    console.log("Markdown files loaded successfully");
+    // 5. Process each file using streaming approach
+    for (const filePath of markdownPaths) {
+      console.log(`Processing ${filePath} using streaming approach...`);
 
-    // Process each file
-    for (const file of markdownFiles) {
-      console.log(`Processing ${file.path}...`);
+      // Process file in chunks to avoid loading entire file into memory
+      let fileContent = '';
+      let chunkCounter = 0;
 
-      // Parse and chunk the markdown
-      const chunks = processMarkdown(file.content);
-      console.log(`Created ${chunks.length} chunks from ${file.path}`);
+      // Define chunk processing function
+      const processFileChunk = async (chunk: string) => {
+        // Accumulate content
+        fileContent += chunk;
 
-      if (chunks.length === 0) {
-        continue;
+        // When we have enough content, process it
+        if (fileContent.length >= 5000) { // Process in 5KB chunks
+          // Convert markdown to text
+          const text = markdownToText(fileContent);
+
+          // Create smaller chunks for embedding
+          const textChunks = chunkText(text);
+          console.log(`Created ${textChunks.length} text chunks from file chunk`);
+
+          // Process each text chunk individually to minimize memory usage
+          for (const textChunk of textChunks) {
+            try {
+              // Generate embedding for single chunk
+              console.log(`Processing text chunk ${++chunkCounter} from ${filePath}`);
+              const embedding = await generateEmbedding(textChunk);
+
+              // Create ID and metadata
+              const id = `${filePath.replace(/[\/\\]/g, "_")}_chunk_${chunkCounter}`;
+              const metadata = { source: filePath };
+
+              // Upsert single chunk into ChromaDB
+              await upsertDocuments(collection, [id], [textChunk], [embedding], [metadata]);
+              console.log(`Upserted chunk ${chunkCounter} from ${filePath}`);
+
+              // Explicitly help garbage collection
+              // Note: We can't modify string length, but we can dereference it
+              // Let the variables be garbage collected naturally
+
+              // Add a small delay to allow for GC
+              await new Promise(resolve => setTimeout(resolve, 50));
+            } catch (error) {
+              console.error(`Error processing text chunk ${chunkCounter}:`, error);
+              throw error;
+            }
+          }
+
+          // Reset accumulated content but keep a small overlap
+          const overlapSize = 200;
+          fileContent = fileContent.slice(-overlapSize);
+
+          // Explicitly help garbage collection
+          textChunks.length = 0;
+          // Try to force garbage collection if available
+          if (typeof global.gc === 'function') {
+            try {
+              global.gc();
+            } catch (e) {
+              // Ignore if gc is not available
+            }
+          }
+        }
+      };
+
+      // Process the file using streaming
+      try {
+        await processMarkdownFileByChunk(filePath, 1024, processFileChunk);
+
+        // Process any remaining content
+        if (fileContent.length > 0) {
+          const text = markdownToText(fileContent);
+          const textChunks = chunkText(text);
+
+          for (const textChunk of textChunks) {
+            const embedding = await generateEmbedding(textChunk);
+            const id = `${filePath.replace(/[\/\\]/g, "_")}_chunk_${++chunkCounter}`;
+            const metadata = { source: filePath };
+            await upsertDocuments(collection, [id], [textChunk], [embedding], [metadata]);
+            console.log(`Upserted final chunk ${chunkCounter} from ${filePath}`);
+          }
+        }
+
+        console.log(`Completed processing ${filePath} with ${chunkCounter} total chunks`);
+
+        // Explicitly help garbage collection
+        fileContent = '';
+        // Try to force garbage collection if available
+        if (typeof global.gc === 'function') {
+          try {
+            global.gc();
+          } catch (e) {
+            // Ignore if gc is not available
+          }
+        }
+
+      } catch (error) {
+        console.error(`Error processing file ${filePath}:`, error);
+        throw error;
       }
-
-      // 5. Vectorize text using OpenAI
-      console.log("Generating embeddings...");
-      const embeddings = await generateEmbeddings(chunks);
-
-      // Create IDs and metadata for each chunk
-      const ids = chunks.map((_, index) => `${file.path.replace(/[\/\\]/g, "_")}_chunk_${index}`);
-      const metadatas = chunks.map(() => ({ source: file.path }));
-
-      // 6. Upsert into ChromaDB
-      await upsertDocuments(collection, ids, chunks, embeddings, metadatas);
-      console.log(`Upserted ${chunks.length} chunks from ${file.path} into ChromaDB`);
     }
 
     console.log("All Markdown files processed successfully");
 
-    // 7. Perform similarity search via CLI
+    // 6. Perform similarity search via CLI
     await performSearch(collection);
 
   } catch (error) {
