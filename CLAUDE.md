@@ -674,3 +674,142 @@ When you run the application, it will:
 - [ChromaDB Clients (TypeScript) Repository](https://github.com/chroma-core/chroma/tree/main/clients/js)
 - [OpenAI Embeddings API](https://platform.openai.com/docs/guides/embeddings)
 - [TypeScript Official Documentation](https://www.typescriptlang.org/docs/)
+
+---
+
+# Implementation Plan (2025/04/29 Update)
+
+## Overview
+
+This section documents the concrete implementation plan for the ChromaDB TypeScript project, reflecting the latest requirements and user feedback.
+
+### Key Points
+
+- Use the latest stable versions of all dependencies.
+- The `.env` file with a valid `OPENAI_API_KEY` is already set up.
+- Provide 2–3 sample Markdown files (content is arbitrary).
+- CLI-only application (no Web UI required).
+- No initial reset of the ChromaDB persistence directory.
+- No need for automated tests or CI/CD.
+- MCP server Git integration is minimal (basic GitHub Flow).
+
+---
+
+## Directory & File Structure
+
+```
+/playground-cromadb
+├── .env
+├── package.json
+├── tsconfig.json
+├── CLAUDE.md
+├── src/
+│   ├── index.ts              # Entry point
+│   ├── config.ts             # Configuration management
+│   ├── db/
+│   │   ├── chroma-client.ts  # ChromaDB client
+│   │   └── collections.ts    # Collection management
+│   ├── embedding/
+│   │   └── openai.ts         # OpenAI embedding management
+│   ├── markdown/
+│   │   ├── loader.ts         # Markdown file loader
+│   │   └── parser.ts         # Markdown parser & chunking
+│   └── search/
+│       └── query.ts          # Search logic
+├── data/
+│   └── markdown/
+│       ├── sample1.md
+│       ├── sample2.md
+│       └── sample3.md
+└── dist/
+```
+
+---
+
+## Implementation Flow
+
+1. **Load configuration and environment variables**  
+   - Read `OPENAI_API_KEY` from `.env`
+2. **Ensure ChromaDB persistence directory exists**
+3. **Initialize ChromaDB client and check health**
+4. **Get or create the collection**
+5. **Load, parse, and chunk Markdown files**
+6. **Vectorize text using OpenAI and upsert into ChromaDB**
+7. **Perform similarity search via CLI and display results**
+
+---
+
+## Module Responsibilities
+
+- **config.ts**: Manage configuration and environment validation
+- **db/chroma-client.ts**: ChromaDB client instantiation and persistence
+- **db/collections.ts**: Collection creation, upsert, and query
+- **embedding/openai.ts**: OpenAI embedding logic
+- **markdown/loader.ts**: Markdown file discovery and loading
+- **markdown/parser.ts**: Markdown-to-text conversion and chunking
+- **search/query.ts**: Similarity and filtered search
+- **index.ts**: Orchestrate the entire workflow
+
+---
+
+## Sample Markdown Files
+
+- `sample1.md`  
+  ```
+  # TypeScript Features
+  TypeScript provides static typing, classes, and interfaces.
+  ```
+- `sample2.md`  
+  ```
+  # ChromaDB Overview
+  ChromaDB is a vector database for AI applications.
+  ```
+- `sample3.md`  
+  ```
+  # OpenAI Embeddings
+  OpenAI offers various embedding models for text vectorization.
+  ```
+
+---
+
+## MCP Server Integration
+
+- Use MCP server tools for basic GitHub Flow operations (branching, commit, PR creation).
+- Manual review and merge unless otherwise instructed.
+
+---
+
+## System Architecture (Mermaid Diagram)
+
+```mermaid
+flowchart TD
+    subgraph CLI Execution
+        A[Start: index.ts]
+    end
+    subgraph Config & Initialization
+        B[config.ts<br>Load env/config]
+        C[chroma-client.ts<br>ChromaDB init]
+        D[collections.ts<br>Get collection]
+    end
+    subgraph Data Processing
+        E[loader.ts<br>Markdown load]
+        F[parser.ts<br>Text extract/chunk]
+        G[openai.ts<br>Vectorize]
+        H[collections.ts<br>Upsert]
+    end
+    subgraph Search
+        I[query.ts<br>Similarity search]
+        J[CLI Output]
+    end
+
+    A --> B --> C --> D
+    D --> E --> F --> G --> H
+    H --> I --> J
+```
+
+---
+
+## Notes
+
+- All implementation and documentation are in English, except for user-facing CLI messages, which may be in Japanese as needed.
+- The plan strictly follows the structure and modularization described in the original CLAUDE.md.
