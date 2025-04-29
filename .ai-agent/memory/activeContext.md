@@ -2,18 +2,29 @@
 
 ## Implementation Flow
 
-1. Load configuration and environment variables  
+1. Start ChromaDB server using Docker
+   ```bash
+   docker compose up -d
+   ```
+2. Load configuration and environment variables
    - Read `OPENAI_API_KEY` from `.env`
-2. Ensure ChromaDB persistence directory exists
-3. Initialize ChromaDB client and check health
-4. Get or create the collection
-5. Load, parse, and chunk Markdown files
-6. Vectorize text using OpenAI and upsert into ChromaDB
-7. Perform similarity search via CLI and display results
+3. Initialize ChromaDB client with HTTP connection to Docker container
+4. Check ChromaDB server health
+5. Get or create the collection
+6. Load, parse, and chunk Markdown files
+7. Vectorize text using OpenAI and upsert into ChromaDB
+8. Perform similarity search via CLI and display results
 
 ## Execution Method
 
-Run the project with the following commands:
+First, ensure the ChromaDB Docker container is running:
+
+```bash
+# Start ChromaDB server (if not already running)
+docker compose up -d
+```
+
+Then run the project with the following commands:
 
 ```bash
 # Compile TypeScript
@@ -21,13 +32,32 @@ pnpm exec tsc
 
 # Run the application
 node dist/index.js
+
+# Run the application on development
+pnpm run dev
 ```
 
 When you run the application, it will:
-1. Create a persistent ChromaDB database in the `chroma_db` directory
-2. Process and embed markdown files 
-3. Store the results for future use
+
+1. Connect to the ChromaDB server running in Docker
+2. Process and embed markdown files
+3. Store the results in the persistent Docker volume
 4. Subsequent runs will update the existing database rather than starting from scratch
+
+To stop the ChromaDB server:
+
+```bash
+docker compose down
+```
+
+## Docker Container Architecture
+
+```mermaid
+graph TD
+    A[TypeScript Application] -->|HTTP API| B[ChromaDB Docker Container]
+    B -->|Persistent Storage| C[./chroma_db Volume]
+    A -->|Embedding Requests| D[OpenAI API]
+```
 
 ## MCP Server Integration
 
