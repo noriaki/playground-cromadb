@@ -23,7 +23,7 @@ export function getOpenAIClient(): OpenAI {
 export function getOpenAIEmbeddingFunction(): OpenAIEmbeddingFunction {
   return new OpenAIEmbeddingFunction({
     openai_api_key: config.openaiApiKey,
-    model_name: config.openaiModel,
+    openai_model: config.openaiModel,
   });
 }
 

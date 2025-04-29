@@ -59,7 +59,9 @@ async function main() {
     searchResults.forEach((result, index) => {
       console.log(`\n#${index + 1} (Similarity: ${1 - result.distance})`);
       console.log(`Source: ${result.metadata.filename}`);
-      console.log(`Content: ${result.document.substring(0, 150)}...`);
+      if (result.document) {
+        console.log(`Content: ${result.document.substring(0, 150)}...`);
+      }
     });
     
   } catch (error) {
