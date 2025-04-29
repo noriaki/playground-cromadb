@@ -2,6 +2,25 @@
 
 This document outlines the steps to build a vector search system using TypeScript and ChromaDB.
 
+## Development Guidelines
+
+### Claude Code Behavior
+
+- **Language Usage**:
+  - User interactions will be conducted in Japanese
+  - Technical documentation, comments, and internal thinking will be in English
+
+### Version Control and Collaboration
+
+- **Git Version Control**:
+  - Appropriate granularity and timing for version control using Git
+  - Following GitHub Flow branch strategy: creating and switching branches per task
+  - Commit messages and Pull Requests will be written in concise, clear English
+  - All merges to the main branch must go through Pull Requests
+    - In principle, users will review Pull Requests on GitHub and perform merges
+    - Claude may merge Pull Requests only when explicitly instructed by the user
+  - Actively utilize MCP server Tool functions for Git and GitHub operations
+
 ## Project Objectives
 
 Create a TypeScript application that accomplishes the following tasks:
@@ -655,22 +674,3 @@ When you run the application, it will:
 - [ChromaDB Clients (TypeScript) Repository](https://github.com/chroma-core/chroma/tree/main/clients/js)
 - [OpenAI Embeddings API](https://platform.openai.com/docs/guides/embeddings)
 - [TypeScript Official Documentation](https://www.typescriptlang.org/docs/)
-
-## Development Guidelines
-
-### Claude Code Behavior
-
-- **Language Usage**:
-  - User interactions will be conducted in Japanese
-  - Technical documentation, comments, and internal thinking will be in English
-
-### Version Control and Collaboration
-
-- **Git Version Control**:
-  - Appropriate granularity and timing for version control using Git
-  - Following GitHub Flow branch strategy: creating and switching branches per task
-  - Commit messages and Pull Requests will be written in concise, clear English
-  - All merges to the main branch must go through Pull Requests
-    - In principle, users will review Pull Requests on GitHub and perform merges
-    - Claude may merge Pull Requests only when explicitly instructed by the user
-  - Actively utilize MCP server Tool functions for Git and GitHub operations
