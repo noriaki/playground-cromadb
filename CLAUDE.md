@@ -20,17 +20,17 @@ Create a TypeScript application that accomplishes the following tasks:
 cd /home/noriaki/workspace/ai-programming/playground-cromadb
 
 # Initialize TypeScript project
-npm init -y
-npm install --save-dev typescript ts-node @types/node
-npx tsc --init
+pnpm init
+pnpm add -D typescript ts-node @types/node
+pnpm exec tsc --init
 ```
 
 ### 2. Install Required Packages
 
 ```bash
 # Install ChromaDB, OpenAI client, and other utilities
-npm install chromadb openai dotenv markdown-it glob
-npm install --save-dev @types/markdown-it @types/glob
+pnpm add chromadb openai dotenv markdown-it glob
+pnpm add -D @types/markdown-it @types/glob
 ```
 
 ### 3. Environment Variables Setup
@@ -538,7 +538,7 @@ Run the project with the following commands:
 
 ```bash
 # Compile TypeScript
-npx tsc
+pnpm exec tsc
 
 # Run the application
 node dist/index.js
