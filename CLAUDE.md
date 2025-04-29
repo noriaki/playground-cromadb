@@ -6,7 +6,7 @@ This document outlines the steps to build a vector search system using TypeScrip
 
 Create a TypeScript application that accomplishes the following tasks:
 
-1. Create an Ephemeral (In-Memory) ChromaDB instance
+1. Create a Persistent ChromaDB instance with local storage
 2. Extract text from local Markdown files and add them to the database
 3. Vectorize text using OpenAI's text-embedding-3-small model
 4. Perform similarity searches using keywords or sentences as queries
@@ -76,6 +76,7 @@ Use the following directory structure for the project:
 
 ```typescript
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 
 // Load environment variables
 dotenv.config();
@@ -87,6 +88,10 @@ export const config = {
   markdownDir: './data/markdown',        // Markdown files directory
   chunkSize: 1000,                       // Text chunk size
   chunkOverlap: 200,                     // Overlap size between chunks
+  chromaDb: {
+    persistDirectory: path.join(process.cwd(), 'chroma_db'), // Path for persistent storage
+    collectionName: 'markdown_documents',                    // Default collection name
+  },
 };
 
 // Validate required environment variables
@@ -100,19 +105,23 @@ export function validateConfig(): void {
 #### src/db/chroma-client.ts
 
 ```typescript
-import { ChromaClient } from 'chromadb';
+import { ChromaClient, PersistentClient } from 'chromadb';
+import { config } from '../config';
 
 // Singleton instance of ChromaDB client
 let client: ChromaClient | null = null;
 
 /**
  * Get ChromaDB client instance
- * Instantiate in Ephemeral mode (in-memory)
+ * Instantiate in PersistentClient mode for local file storage
  */
 export function getChromaClient(): ChromaClient {
   if (!client) {
-    client = new ChromaClient();
-    console.log('ChromaDB client initialized (in-memory mode)');
+    // Initialize with PersistentClient for local file storage
+    client = new PersistentClient({
+      path: config.chromaDb.persistDirectory,
+    });
+    console.log(`ChromaDB PersistentClient initialized with storage at: ${config.chromaDb.persistDirectory}`);
   }
   return client;
 }
@@ -128,6 +137,22 @@ export async function checkClientHealth(): Promise<boolean> {
     return true;
   } catch (error) {
     console.error('Failed to connect to ChromaDB client:', error);
+    return false;
+  }
+}
+
+/**
+ * Reset the database (WARNING: Destructive operation)
+ * Useful during development or for complete reindexing
+ */
+export async function resetDatabase(): Promise<boolean> {
+  try {
+    const client = getChromaClient();
+    await client.reset();
+    console.log('ChromaDB database has been reset');
+    return true;
+  } catch (error) {
+    console.error('Failed to reset ChromaDB database:', error);
     return false;
   }
 }
@@ -304,9 +329,7 @@ export function splitTextIntoChunks(text: string): string[] {
 import { ChromaClient, Collection } from 'chromadb';
 import { getChromaClient } from './chroma-client';
 import { getOpenAIEmbeddingFunction } from '../embedding/openai';
-
-// Collection name
-const COLLECTION_NAME = 'markdown_documents';
+import { config } from '../config';
 
 /**
  * Get or create a collection for Markdown documents
@@ -318,11 +341,15 @@ export async function getOrCreateCollection(): Promise<Collection> {
   try {
     // Get collection, create if it doesn't exist
     const collection = await client.getOrCreateCollection({
-      name: COLLECTION_NAME,
+      name: config.chromaDb.collectionName,
       embeddingFunction: embedder,
+      metadata: {
+        description: "Collection for markdown documents with OpenAI embeddings",
+        created_at: new Date().toISOString(),
+      }
     });
     
-    console.log(`Collection '${COLLECTION_NAME}' retrieved`);
+    console.log(`Collection '${config.chromaDb.collectionName}' retrieved or created`);
     return collection;
   } catch (error) {
     console.error('Error occurred while getting/creating collection:', error);
@@ -351,6 +378,45 @@ export async function addDocumentsToCollection(
     console.log(`Added ${documents.length} documents to collection`);
   } catch (error) {
     console.error('Error occurred while adding documents:', error);
+    throw error;
+  }
+}
+
+/**
+ * Upsert documents to collection (add or update if exists)
+ */
+export async function upsertDocumentsToCollection(
+  collection: Collection,
+  documents: Array<{
+    id: string, 
+    content: string, 
+    metadata: Record<string, any>
+  }>
+): Promise<void> {
+  try {
+    await collection.upsert({
+      ids: documents.map(doc => doc.id),
+      documents: documents.map(doc => doc.content),
+      metadatas: documents.map(doc => doc.metadata),
+    });
+    
+    console.log(`Upserted ${documents.length} documents to collection`);
+  } catch (error) {
+    console.error('Error occurred while upserting documents:', error);
+    throw error;
+  }
+}
+
+/**
+ * Count documents in the collection
+ */
+export async function countDocumentsInCollection(
+  collection: Collection
+): Promise<number> {
+  try {
+    return await collection.count();
+  } catch (error) {
+    console.error('Error occurred while counting documents:', error);
     throw error;
   }
 }
@@ -458,17 +524,26 @@ export async function searchWithFilter(
 #### src/index.ts
 
 ```typescript
-import { validateConfig } from './config';
+import { validateConfig, config } from './config';
 import { checkClientHealth } from './db/chroma-client';
-import { getOrCreateCollection, addDocumentsToCollection } from './db/collections';
+import { getOrCreateCollection, addDocumentsToCollection, upsertDocumentsToCollection, countDocumentsInCollection } from './db/collections';
 import { loadAllMarkdownContents } from './markdown/loader';
 import { parseMarkdownToText, splitTextIntoChunks } from './markdown/parser';
 import { searchByText } from './search/query';
+import * as fs from 'fs';
+import * as path from 'path';
 
 async function main() {
   try {
     // Validate configuration
     validateConfig();
+    
+    // Ensure persist directory exists
+    const persistDir = config.chromaDb.persistDirectory;
+    if (!fs.existsSync(persistDir)) {
+      console.log(`Creating persistence directory at: ${persistDir}`);
+      fs.mkdirSync(persistDir, { recursive: true });
+    }
     
     // Check ChromaDB client health
     const isHealthy = await checkClientHealth();
@@ -479,11 +554,15 @@ async function main() {
     // Get collection
     const collection = await getOrCreateCollection();
     
+    // Check if collection already has documents
+    const documentCount = await countDocumentsInCollection(collection);
+    console.log(`Collection has ${documentCount} documents`);
+    
     // Load Markdown files
     const markdownContents = loadAllMarkdownContents();
     console.log(`Loaded ${markdownContents.length} Markdown files`);
     
-    // Process documents and add to collection
+    // Process documents and prepare for collection
     const processedDocuments = markdownContents.flatMap((doc, docIndex) => {
       // Convert Markdown to text
       const text = parseMarkdownToText(doc.content);
@@ -499,14 +578,17 @@ async function main() {
           ...doc.metadata,
           chunkIndex,
           docIndex,
-          docId: doc.id
+          docId: doc.id,
+          lastUpdated: new Date().toISOString()
         }
       }));
     });
     
-    // Add documents to collection
+    // Add or update documents in collection
     if (processedDocuments.length > 0) {
-      await addDocumentsToCollection(collection, processedDocuments);
+      // We use upsert to handle updates to existing documents
+      await upsertDocumentsToCollection(collection, processedDocuments);
+      console.log(`Collection now has ${await countDocumentsInCollection(collection)} documents`);
     }
     
     // Test search
@@ -544,23 +626,33 @@ pnpm exec tsc
 node dist/index.js
 ```
 
+When you run the application, it will:
+1. Create a persistent ChromaDB database in the `chroma_db` directory
+2. Process and embed markdown files 
+3. Store the results for future use
+4. Subsequent runs will update the existing database rather than starting from scratch
+
 ## Extension Ideas
 
-1. **Persistence Option**: Add configuration to persist ChromaDB data
-2. **Web UI**: Provide search functionality through a simple web UI
-3. **Metrics**: Implement mechanisms to evaluate search quality and performance
-4. **Embedding Model Comparison**: Compare performance with other embedding models
-5. **Multimodal Support**: Extend to support images and other data types
+1. **Web UI**: Provide search functionality through a simple web UI
+2. **Metrics**: Implement mechanisms to evaluate search quality and performance
+3. **Embedding Model Comparison**: Compare performance with other embedding models
+4. **Multimodal Support**: Extend to support images and other data types
+5. **Data Sync**: Add functionality to sync with remote data sources
 
 ## Troubleshooting
 
 1. **OPENAI_API_KEY not set error**: Verify that the API key is correctly set in the `.env` file.
 2. **ChromaDB client connection error**: Check for version compatibility with ChromaDB.
 3. **Memory errors**: Adjust chunk sizes or switch to streaming processing when handling large amounts of data.
+4. **Database permission errors**: Ensure the application has write permissions to the persistence directory.
+5. **Database corruption**: If experiencing issues with the database, delete the `chroma_db` directory to start fresh, but note that this will remove all indexed data.
 
 ## Reference Resources
 
 - [ChromaDB Official Documentation](https://docs.trychroma.com/)
+- [ChromaDB Persistent Storage Guide](https://docs.trychroma.com/docs/run-chroma/persistent-client)
+- [ChromaDB Clients (TypeScript) Repository](https://github.com/chroma-core/chroma/tree/main/clients/js)
 - [OpenAI Embeddings API](https://platform.openai.com/docs/guides/embeddings)
 - [TypeScript Official Documentation](https://www.typescriptlang.org/docs/)
 
