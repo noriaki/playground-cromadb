@@ -56,3 +56,18 @@ flowchart TD
     B --> C
     C --> D
     D --> I --> J
+
+    %% Performance Optimization Additions
+    subgraph Performance Optimization
+        P1[Parallel File Processing]
+        P2[Batch Size Optimization]
+        P3[Delay & GC Optimization]
+        P4[Docker Resource Optimization]
+    end
+
+    P1 --> E
+    P2 --> G
+    P2 --> H
+    P3 --> G
+    P3 --> H
+    P4 --> H

@@ -63,3 +63,21 @@ graph TD
 
 - Use MCP server tools for basic GitHub Flow operations (branching, commit, PR creation).
 - Manual review and merge unless otherwise instructed.
+
+## Design and Requirements for Markdown Registration Speedup
+
+### 1. Introduce Parallel Processing
+- Process Markdown files in parallel at the file level to handle multiple files simultaneously.
+- Consider asynchronous parallelization for batch OpenAI embedding generation and ChromaDB upsert.
+
+### 2. Optimize Batch Sizes
+- Dynamically adjust batch sizes for OpenAI embedding API to reduce the number of API calls.
+- Optimize batch sizes for ChromaDB upsert to reduce communication overhead.
+
+### 3. Review Delays and GC Calls
+- Reassess the current 100ms delay and GC calls to eliminate unnecessary wait times.
+- Implement dynamic GC call strategies based on memory usage.
+
+### 4. Optimize Docker Resource Settings
+- Review CPU and memory allocation for Docker containers to prevent delays caused by resource shortages.
+- Adjust Docker Compose settings as needed.
