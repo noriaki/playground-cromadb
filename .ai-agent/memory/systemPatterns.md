@@ -9,7 +9,8 @@
 - **markdown/loader.ts**: Markdown file discovery and loading
 - **markdown/parser.ts**: Markdown-to-text conversion and chunking
 - **search/query.ts**: Similarity and filtered search
-- **index.ts**: Orchestrate the entire workflow
+- **index.ts**: Handle search functionality
+- **processor.ts**: Handle Markdown processing and registration
 - **docker-compose.yml**: ChromaDB server containerization and persistence configuration
 
 ## System Architecture (Mermaid Diagram)
@@ -17,7 +18,8 @@
 ```mermaid
 flowchart TD
     subgraph CLI Execution
-        A[Start: index.ts]
+        A1[Start: processor.ts]
+        A2[Start: index.ts]
     end
     subgraph Docker Container
         DC[ChromaDB Server]
@@ -29,7 +31,8 @@ flowchart TD
     end
     subgraph Data Processing
         E[loader.ts<br>Markdown load]
-        F[parser.ts<br>Text extract/chunk]
+        F1[semantic-parser.ts<br>Structure analysis]
+        F2[adaptive-chunker.ts<br>Semantic chunking]
         G[openai.ts<br>Vectorize]
         H[collections.ts<br>Upsert]
     end
@@ -41,9 +44,15 @@ flowchart TD
         OAI[OpenAI API]
     end
 
-    A --> B --> C
+    %% Processor flow
+    A1 --> B --> C
     C <--> DC
     C --> D
-    D --> E --> F --> G --> H
+    D --> E --> F1 --> F2 --> G --> H
     G <--> OAI
-    H --> I --> J
+    
+    %% Search flow
+    A2 --> B
+    B --> C
+    C --> D
+    D --> I --> J

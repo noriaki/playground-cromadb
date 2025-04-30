@@ -70,7 +70,8 @@ Use the following directory structure for the project:
   ├── tsconfig.json             # TypeScript configuration
   ├── docker-compose.yml        # Docker configuration for ChromaDB
   ├── src/
-  │   ├── index.ts              # Entry point
+  │   ├── index.ts              # Search functionality entry point
+  │   ├── processor.ts          # Markdown processing entry point
   │   ├── config.ts             # Configuration management
   │   ├── db/
   │   │   ├── chroma-client.ts  # ChromaDB client
@@ -79,7 +80,13 @@ Use the following directory structure for the project:
   │   │   └── openai.ts         # OpenAI Embedding management
   │   ├── markdown/
   │   │   ├── loader.ts         # Markdown file loader
-  │   │   └── parser.ts         # Markdown parser
+  │   │   ├── parser.ts         # Markdown parser
+  │   │   ├── semantic-parser.ts # Semantic analysis
+  │   │   └── adaptive-chunker.ts # Adaptive chunking
+  │   ├── profiling/
+  │   │   └── memory-profile.ts # Memory profiling
+  │   ├── utils/
+  │   │   └── memory-monitor.ts # Memory usage monitoring
   │   └── search/
   │       └── query.ts          # Search logic
   ├── data/

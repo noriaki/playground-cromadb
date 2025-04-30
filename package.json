@@ -4,10 +4,11 @@
   "description": "A TypeScript project for persistent ChromaDB with OpenAI embeddings and markdown search",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "NODE_OPTIONS=--max-old-space-size=8192 pnpm exec ts-node src/index.ts",
+    "dev": "pnpm run dev:process && pnpm run dev:search",
+    "dev:process": "NODE_OPTIONS=--max-old-space-size=8192 ts-node src/processor.ts",
+    "dev:search": "ts-node src/index.ts",
     "build": "tsc",
-    "profile": "NODE_OPTIONS='--max-old-space-size=8192 --inspect --expose-gc' pnpm exec ts-node src/profiling/memory-profile.ts",
-    "profile:embeddings": "NODE_OPTIONS='--max-old-space-size=8192 --inspect --expose-gc' TEST_EMBEDDINGS=true pnpm exec ts-node src/profiling/memory-profile.ts"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "chromadb": "^2.3.0",

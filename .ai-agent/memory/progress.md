@@ -9,6 +9,10 @@
 - Memory profiling tools track resource usage effectively
 - All changes have been merged to main branch after review
 - System successfully processes 9 Markdown files into 41 semantic chunks
+- **[NEW] Separated Markdown processing and Vector search functionality**
+  - `processor.ts` - Handles Markdown file processing and registration
+  - `index.ts` - Handles search functionality only
+  - Added scripts to run each function independently
 
 ## Next Steps
 
@@ -19,3 +23,5 @@
 - Implement incremental processing for unchanged files
 - Explore distributed processing for larger document collections
 - Add automated testing suite
+- **[NEW] Optimize data flow between separated components**
+- **[NEW] Performance optimization for each component**
