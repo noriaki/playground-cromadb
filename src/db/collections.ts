@@ -47,6 +47,7 @@ export async function getOrCreateCollection(client: ChromaClient): Promise<Colle
 /**
  * Add or update documents in the collection
  * Optimized for batch operations with error handling
+ * Ensures metadata only contains primitive types allowed by ChromaDB (boolean, number, string)
  */
 export async function upsertDocuments(
   collection: Collection,
@@ -70,12 +71,30 @@ export async function upsertDocuments(
       reportMemoryUsage(`before_upsert_${ids.length}_documents`);
     }
     
-    // Execute upsert operation
+    // Clean metadata to ensure it only contains primitive types allowed by ChromaDB
+    const cleanedMetadatas = metadatas ? metadatas.map(metadata => {
+      const cleaned: Record<string, boolean | number | string> = {};
+      if (metadata) {
+        Object.keys(metadata).forEach(key => {
+          const value = metadata[key];
+          if (
+            typeof value === 'string' || 
+            typeof value === 'number' || 
+            typeof value === 'boolean'
+          ) {
+            cleaned[key] = value;
+          }
+        });
+      }
+      return cleaned;
+    }) : Array(ids.length).fill({});
+    
+    // Execute upsert operation with cleaned data
     await collection.upsert({
       ids,
       documents,
       embeddings,
-      metadatas: metadatas || Array(ids.length).fill({})
+      metadatas: cleanedMetadatas
     });
     
     // Report memory usage for large batches
