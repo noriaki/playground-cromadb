@@ -1,6 +1,7 @@
 // src/search/query.ts
 import { Collection } from "chromadb";
 import { generateEmbedding } from "../embedding/openai";
+import { querySimilar } from "../db/collections";
 
 /**
  * Search for similar documents using a text query
@@ -23,19 +24,8 @@ export async function searchSimilarDocuments(
     // Generate embedding for the query text
     const queryEmbedding = await generateEmbedding(query);
 
-    // Perform similarity search using the embedding
-    const results = await collection.query({
-      queryEmbeddings: [queryEmbedding],
-      nResults: limit,
-      include: ["documents", "distances", "metadatas"] as any
-    });
-
-    return {
-      documents: (results.documents?.[0] || []).filter(Boolean) as string[],
-      distances: results.distances?.[0] || [],
-      metadatas: (results.metadatas?.[0] || []).filter(Boolean) as Record<string, any>[],
-      ids: results.ids?.[0] || []
-    };
+    // Perform similarity search using the embedding via collections module
+    return await querySimilar(collection, queryEmbedding, limit);
   } catch (error) {
     console.error("Error searching for similar documents:", error);
     throw new Error(`Failed to search for similar documents: ${error}`);
@@ -60,10 +50,10 @@ export function formatSearchResults(results: {
   let output = `Found ${results.documents.length} results:\n\n`;
 
   for (let i = 0; i < results.documents.length; i++) {
-    const distance = results.distances[i];
+    const distance = results.distances[i] || 0;
     const similarity = 1 - distance; // Convert distance to similarity score
     const metadata = results.metadatas[i] || {};
-    const id = results.ids[i];
+    const id = results.ids[i] || `result-${i+1}`;
 
     output += `Result ${i + 1} (Similarity: ${(similarity * 100).toFixed(2)}%):\n`;
     output += `ID: ${id}\n`;
@@ -72,9 +62,14 @@ export function formatSearchResults(results: {
       output += `Source: ${metadata.source}\n`;
     }
 
-    output += `Content: ${results.documents[i].substring(0, 200)}${
-      results.documents[i].length > 200 ? "..." : ""
-    }\n\n`;
+    const content = results.documents[i];
+    if (content) {
+      output += `Content: ${content.substring(0, 200)}${
+        content.length > 200 ? "..." : ""
+      }\n\n`;
+    } else {
+      output += "Content: [No content available]\n\n";
+    }
   }
 
   return output;

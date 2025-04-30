@@ -48,11 +48,6 @@ export async function generateEmbeddings(
     for (let i = 0; i < texts.length; i += batchSize) {
       const batchTexts = texts.slice(i, i + batchSize);
       console.log(`Processing embedding batch ${Math.floor(i / batchSize) + 1} of ${totalBatches}`);
-      
-      // Report memory before API call
-      if (i % (batchSize * 5) === 0) { // Report every 5 batches to reduce log noise
-        reportMemoryUsage(`before_embedding_batch_${i}`);
-      }
 
       // Make API call
       const response = await openai.embeddings.create({
@@ -95,7 +90,7 @@ export async function generateEmbeddings(
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const embeddings = await generateEmbeddings([text]);
-  return embeddings[0];
+  return embeddings[0] || [];
 }
 
 /**
@@ -115,9 +110,11 @@ export function calculateCosineSimilarity(embedding1: number[], embedding2: numb
   let magnitude2 = 0;
   
   for (let i = 0; i < embedding1.length; i++) {
-    dotProduct += embedding1[i] * embedding2[i];
-    magnitude1 += embedding1[i] * embedding1[i];
-    magnitude2 += embedding2[i] * embedding2[i];
+    const val1 = embedding1[i] || 0;
+    const val2 = embedding2[i] || 0;
+    dotProduct += val1 * val2;
+    magnitude1 += val1 * val1;
+    magnitude2 += val2 * val2;
   }
   
   magnitude1 = Math.sqrt(magnitude1);

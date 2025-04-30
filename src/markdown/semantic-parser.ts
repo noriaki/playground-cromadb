@@ -60,7 +60,7 @@ function createNodeFromBlock(block: string, start: number, end: number): Markdow
   
   // Check for headings
   const headingMatch = trimmedBlock.match(/^(#{1,6})\s+(.+)$/m);
-  if (headingMatch) {
+  if (headingMatch && headingMatch[1] && headingMatch[2]) {
     return {
       type: 'heading',
       level: headingMatch[1].length,
@@ -147,8 +147,8 @@ function buildHierarchy(nodes: MarkdownNode[]): MarkdownNode[] {
       // Pop headings from stack that are same or lower level than current
       while (
         headingStack.length > 0 && 
-        headingStack[headingStack.length - 1].type === 'heading' &&
-        (headingStack[headingStack.length - 1].level || 0) >= (node.level || 0)
+        headingStack[headingStack.length - 1]?.type === 'heading' &&
+        (headingStack[headingStack.length - 1]?.level || 0) >= (node.level || 0)
       ) {
         headingStack.pop();
       }
@@ -159,9 +159,11 @@ function buildHierarchy(nodes: MarkdownNode[]): MarkdownNode[] {
       } else {
         // Otherwise, add as child to parent
         const parent = headingStack[headingStack.length - 1];
-        if (!parent.children) parent.children = [];
-        parent.children.push(node);
-        node.parent = parent;
+        if (parent) {
+          if (!parent.children) parent.children = [];
+          parent.children.push(node);
+          node.parent = parent;
+        }
       }
       
       // Push current heading to stack
@@ -172,9 +174,11 @@ function buildHierarchy(nodes: MarkdownNode[]): MarkdownNode[] {
         rootNodes.push(node);
       } else {
         const parent = headingStack[headingStack.length - 1];
-        if (!parent.children) parent.children = [];
-        parent.children.push(node);
-        node.parent = parent;
+        if (parent) {
+          if (!parent.children) parent.children = [];
+          parent.children.push(node);
+          node.parent = parent;
+        }
       }
     }
   }
@@ -185,139 +189,15 @@ function buildHierarchy(nodes: MarkdownNode[]): MarkdownNode[] {
 /**
  * Extracts the heading path (breadcrumb) for a node
  * @param node The node to get heading path for
+ * @param currentPath Optional current path array
  * @returns Array of heading texts forming the path
  */
-export function getHeadingPath(node: MarkdownNode): string[] {
-  const path: string[] = [];
-  let current: MarkdownNode | undefined = node;
+export function getHeadingPath(node: MarkdownNode, currentPath: string[] = []): string[] {
+  const path: string[] = [...currentPath];
   
-  // Traverse up the parent chain to build path
-  while (current) {
-    if (current.type === 'heading') {
-      path.unshift(current.content);
-    }
-    current = current.parent;
+  if (node.type === 'heading') {
+    path.push(node.content);
   }
   
   return path;
-}
-
-/**
- * Converts a Markdown node hierarchy back to plain text
- * @param nodes Array of nodes to convert
- * @returns Plain text representation
- */
-export function nodesToText(nodes: MarkdownNode[]): string {
-  let result = '';
-  
-  for (const node of nodes) {
-    // Add content based on node type
-    if (node.type === 'heading') {
-      result += node.content;
-    } else {
-      result += node.content;
-    }
-    
-    result += '\n\n';
-    
-    // Process children if present
-    if (node.children && node.children.length > 0) {
-      result += nodesToText(node.children);
-    }
-  }
-  
-  return result.trim();
-}
-
-/**
- * Extracts plain text from a Markdown node structure with context preservation
- * @param nodes Markdown nodes to process
- * @param options Options for text extraction
- * @returns Plain text with preserved context
- */
-export function extractTextWithContext(
-  nodes: MarkdownNode[],
-  options: {
-    includeHeadings?: boolean;
-    preserveListMarkers?: boolean;
-    preserveLineBreaks?: boolean;
-  } = {}
-): string {
-  const {
-    includeHeadings = true,
-    preserveListMarkers = false,
-    preserveLineBreaks = true
-  } = options;
-  
-  let result = '';
-  
-  // Process nodes in a flattened way to preserve document flow
-  const flattenedNodes = flattenNodes(nodes);
-  
-  let currentHeadingPath: string[] = [];
-  
-  for (const node of flattenedNodes) {
-    // Handle headings specially
-    if (node.type === 'heading') {
-      currentHeadingPath = getHeadingPath(node);
-      
-      if (includeHeadings) {
-        result += `${node.content}\n`;
-        if (preserveLineBreaks) result += '\n';
-      }
-    } else {
-      // For content under headings, optionally prefix with the heading path
-      let nodeText = '';
-      
-      // Process different node types
-      switch (node.type) {
-        case 'list':
-          if (preserveListMarkers) {
-            nodeText = node.content;
-          } else {
-            // Remove list markers but preserve items
-            nodeText = node.content
-              .replace(/^[-*+]\s+/gm, '')
-              .replace(/^\d+\.\s+/gm, '');
-          }
-          break;
-          
-        case 'codeblock':
-          // Skip code blocks or include with context
-          nodeText = `${node.content}`;
-          break;
-          
-        default:
-          nodeText = node.content;
-      }
-      
-      if (nodeText.trim()) {
-        result += `${nodeText}\n`;
-        if (preserveLineBreaks) result += '\n';
-      }
-    }
-  }
-  
-  return result.trim();
-}
-
-/**
- * Flattens a node hierarchy into a single array in document order
- * @param nodes Root nodes to flatten
- * @returns Flattened array of nodes
- */
-function flattenNodes(nodes: MarkdownNode[]): MarkdownNode[] {
-  const result: MarkdownNode[] = [];
-  
-  function traverse(nodeList: MarkdownNode[]) {
-    for (const node of nodeList) {
-      result.push(node);
-      if (node.children && node.children.length > 0) {
-        traverse(node.children);
-      }
-    }
-  }
-  
-  traverse(nodes);
-  return result;
 }

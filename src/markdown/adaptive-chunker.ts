@@ -11,6 +11,7 @@ export interface AdaptiveChunkOptions {
   overlapSize?: number;     // Overlap size between chunks in characters
   respectSemantics?: boolean; // Whether to respect semantic boundaries
   expandHeadings?: boolean; // Whether to include heading context
+  source?: string;          // Source of the document
 }
 
 /**
@@ -49,154 +50,104 @@ export function createAdaptiveTextChunks(
     targetSize = 700,
     minSize = 300,
     maxSize = 1000,
-    overlapSize = 100,
-    respectSemantics = true
+    overlapSize = 100
   } = options;
-  
-  // Don't chunk small text
-  if (text.length <= maxSize) {
-    return [text];
-  }
-  
+
   const chunks: string[] = [];
-  let currentPosition = 0;
+  let currentChunk = '';
   
-  while (currentPosition < text.length) {
-    // Calculate target end position
-    let endPosition = currentPosition + targetSize;
+  // Split text into paragraphs
+  const paragraphs = text.split(/\n\s*\n/);
+  
+  for (const paragraph of paragraphs) {
+    const trimmedParagraph = paragraph.trim();
+    if (!trimmedParagraph) continue;
     
-    // Don't go beyond text length
-    endPosition = Math.min(endPosition, text.length);
-    
-    // If we're at the end, just add the remaining text
-    if (endPosition === text.length) {
-      const chunk = text.substring(currentPosition);
-      if (chunk.length >= minSize) {
-        chunks.push(chunk);
-      } else if (chunks.length > 0) {
-        // If last chunk is too small, merge with previous chunk
-        const lastChunk = chunks.pop()!;
-        chunks.push(lastChunk + chunk);
-      } else {
-        chunks.push(chunk); // Only chunk, add it regardless of size
-      }
-      break;
+    // Check if adding this paragraph would exceed max size
+    if (currentChunk.length + trimmedParagraph.length > maxSize && currentChunk.length >= minSize) {
+      // Finish current chunk
+      chunks.push(currentChunk);
+      
+      // Create overlap for next chunk
+      const overlapText = currentChunk.slice(-overlapSize);
+      currentChunk = overlapText;
     }
     
-    // Find the best split point between min and max size
-    const minValidEnd = currentPosition + minSize;
-    const maxValidEnd = Math.min(currentPosition + maxSize, text.length);
+    // Add separator if needed
+    if (currentChunk && !currentChunk.endsWith('\n')) {
+      currentChunk += '\n\n';
+    }
     
-    let splitPosition = findBestSplitPosition(
-      text, minValidEnd, maxValidEnd, respectSemantics
-    );
+    // Add paragraph
+    currentChunk += trimmedParagraph;
     
-    // Create chunk
-    const chunk = text.substring(currentPosition, splitPosition);
-    chunks.push(chunk);
-    
-    // Move current position for next chunk, accounting for overlap
-    currentPosition = Math.max(splitPosition - overlapSize, currentPosition + minSize / 2);
+    // Check if we've reached target size
+    if (currentChunk.length >= targetSize) {
+      chunks.push(currentChunk);
+      currentChunk = '';
+    }
+  }
+  
+  // Add any remaining content
+  if (currentChunk) {
+    chunks.push(currentChunk);
   }
   
   return chunks;
 }
 
 /**
- * Finds the best position to split text, respecting semantic boundaries
- * @param text The text to split
- * @param minPosition Minimum valid split position
- * @param maxPosition Maximum valid split position
- * @param respectSemantics Whether to respect semantic boundaries
- * @returns The best position to split at
- */
-function findBestSplitPosition(
-  text: string,
-  minPosition: number,
-  maxPosition: number,
-  respectSemantics: boolean
-): number {
-  // If we don't care about semantics, just use the max position
-  if (!respectSemantics) {
-    return maxPosition;
-  }
-  
-  // Boundaries in descending order of preference
-  const boundaries = [
-    // Paragraph breaks
-    { pattern: /\n\n/g, score: 100 },
-    // Sentence endings
-    { pattern: /[.!?]\s+[A-Z]/g, score: 80 },
-    // End of list items
-    { pattern: /\n[-*+]\s+|\n\d+\.\s+/g, score: 60 },
-    // Commas and semicolons
-    { pattern: /[,;]\s+/g, score: 40 },
-    // Any whitespace
-    { pattern: /\s+/g, score: 20 }
-  ];
-  
-  let bestPosition = maxPosition;
-  let bestScore = -1;
-  
-  // Search for each boundary type
-  for (const { pattern, score } of boundaries) {
-    // Reset the regex for each search
-    pattern.lastIndex = 0;
-    
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      const position = match.index + match[0].length - 1;
-      
-      // Check if position is within valid range
-      if (position >= minPosition && position <= maxPosition) {
-        // Calculate score based on centrality and boundary type
-        // Prefer positions closer to the target size
-        const centralityScore = 1 - Math.abs(position - (minPosition + maxPosition) / 2) / (maxPosition - minPosition);
-        const totalScore = score + centralityScore * 20;
-        
-        if (totalScore > bestScore) {
-          bestScore = totalScore;
-          bestPosition = position;
-        }
-      }
-      
-      // Stop searching if we're beyond the maximum position
-      if (match.index > maxPosition) break;
-    }
-    
-    // If we found a good boundary, stop searching
-    if (bestScore >= 70) break;
-  }
-  
-  return bestPosition;
-}
-
-/**
- * Creates adaptive chunks from markdown nodes, respecting semantic structure
+ * Creates adaptive chunks from a tree of markdown nodes
  * @param nodes Array of markdown nodes
  * @param options Chunking options
- * @returns Array of chunks with metadata
+ * @returns Array of chunk results
  */
 export function createAdaptiveNodeChunks(
   nodes: MarkdownNode[],
-  options: AdaptiveChunkOptions & {
-    source?: string;
-  } = {}
+  options: AdaptiveChunkOptions = {}
 ): ChunkResult[] {
   const {
     targetSize = 700,
     minSize = 300,
     maxSize = 1000,
     overlapSize = 100,
-    expandHeadings = true,
-    source
+    source = ''
   } = options;
   
   const chunks: ChunkResult[] = [];
   
-  // Flatten nodes for processing
-  const flatNodes = flattenNodesWithContext(nodes);
+  // Flatten node tree and track heading paths
+  const flatNodes: Array<{node: MarkdownNode; headingPath: string[]}> = [];
   
+  function flattenNodes(node: MarkdownNode, currentPath: string[] = []) {
+    // Update path for headings
+    let path = [...currentPath];
+    if (node.type === 'heading') {
+      if (node.level && node.level <= 3) { // Only use h1-h3 for path
+        path = getHeadingPath(node, currentPath);
+      }
+    }
+    
+    // Add node with its path
+    flatNodes.push({
+      node,
+      headingPath: path
+    });
+    
+    // Process children
+    if (node.children && node.children.length > 0) {
+      for (const child of node.children) {
+        flattenNodes(child, path);
+      }
+    }
+  }
+  
+  // Flatten all nodes
+  for (const node of nodes) {
+    flattenNodes(node);
+  }
+  
+  // Create chunks from flat nodes
   let currentChunk: {
     text: string;
     nodes: MarkdownNode[];
@@ -215,7 +166,10 @@ export function createAdaptiveNodeChunks(
   
   // Process each node
   for (let i = 0; i < flatNodes.length; i++) {
-    const { node, headingPath } = flatNodes[i];
+    const nodeInfo = flatNodes[i];
+    if (!nodeInfo) continue;
+    
+    const { node, headingPath } = nodeInfo;
     const nodeText = node.content;
     
     // Skip empty nodes
@@ -254,15 +208,25 @@ export function createAdaptiveNodeChunks(
   
   // Add previous/next chunk references
   for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    if (!chunk) continue;
+    
     if (i > 0) {
-      chunks[i].metadata.previousChunkId = `chunk_${i-1}`;
-    }
-    if (i < chunks.length - 1) {
-      chunks[i].metadata.nextChunkId = `chunk_${i+1}`;
+      const prevChunk = chunks[i-1];
+      if (prevChunk) {
+        chunk.metadata.previousChunkId = `chunk_${i-1}`;
+      }
     }
     
-    chunks[i].metadata.totalChunks = chunks.length;
-    chunks[i].id = `chunk_${i}`;
+    if (i < chunks.length - 1) {
+      const nextChunk = chunks[i+1];
+      if (nextChunk) {
+        chunk.metadata.nextChunkId = `chunk_${i+1}`;
+      }
+    }
+    
+    chunk.metadata.totalChunks = chunks.length;
+    chunk.id = `chunk_${i}`;
   }
   
   return chunks;
@@ -302,69 +266,30 @@ export function createAdaptiveNodeChunks(
 }
 
 /**
- * Finds appropriate text to use for overlap between chunks
- * @param text The current chunk text
- * @param desiredOverlapSize Desired overlap size
- * @returns Text to use for overlap
+ * Find a good overlap text that doesn't cut in the middle of a sentence
+ * @param text Text to create overlap from
+ * @param overlapSize Desired overlap size
+ * @returns Overlap text
  */
-function findOverlapText(text: string, desiredOverlapSize: number): string {
-  // If text is shorter than desired overlap, use entire text
-  if (text.length <= desiredOverlapSize) {
+function findOverlapText(text: string, overlapSize: number): string {
+  if (!text || text.length <= overlapSize) {
     return text;
   }
   
-  // Try to find a sentence boundary within the desired overlap size
-  const endPortion = text.slice(-desiredOverlapSize * 2);
-  const sentenceBoundary = endPortion.search(/[.!?]\s+[A-Z]/);
+  // Start with the desired overlap size
+  let overlap = text.slice(-overlapSize);
   
-  if (sentenceBoundary !== -1 && endPortion.length - sentenceBoundary <= desiredOverlapSize) {
-    return endPortion.slice(sentenceBoundary + 2); // +2 to include the punctuation and space
-  }
+  // Try to find a sentence boundary
+  const sentenceBreaks = ['. ', '! ', '? ', '.\n', '!\n', '?\n'];
   
-  // Otherwise just use the last part of the text
-  return text.slice(-desiredOverlapSize);
-}
-
-/**
- * Flattens nodes with their heading context
- * @param nodes The nodes to flatten
- * @param currentPath Current heading path
- * @returns Flattened nodes with heading paths
- */
-function flattenNodesWithContext(
-  nodes: MarkdownNode[],
-  currentPath: string[] = []
-): Array<{node: MarkdownNode, headingPath: string[]}> {
-  const result: Array<{node: MarkdownNode, headingPath: string[]}> = [];
-  
-  for (const node of nodes) {
-    // Update heading path if this is a heading
-    let nodePath = [...currentPath];
-    if (node.type === 'heading') {
-      // For headings of level 1, reset the path
-      if (node.level === 1) {
-        nodePath = [node.content];
-      } else {
-        // For other headings, add to current path
-        // First remove any higher level headings
-        while (nodePath.length >= node.level! - 1) {
-          nodePath.pop();
-        }
-        nodePath.push(node.content);
-      }
-    }
-    
-    // Add node with its context
-    result.push({
-      node,
-      headingPath: nodePath
-    });
-    
-    // Process children if any
-    if (node.children && node.children.length > 0) {
-      result.push(...flattenNodesWithContext(node.children, nodePath));
+  for (const breakPoint of sentenceBreaks) {
+    const lastBreak = text.lastIndexOf(breakPoint, text.length - (overlapSize / 2));
+    if (lastBreak !== -1 && lastBreak > text.length - overlapSize * 2) {
+      // Found a good sentence break point
+      overlap = text.slice(lastBreak + 1);
+      break;
     }
   }
   
-  return result;
+  return overlap;
 }
