@@ -1,6 +1,7 @@
 // src/search/query.ts
 import { Collection } from "chromadb";
 import { generateEmbedding } from "../embedding/openai";
+import { querySimilar } from "../db/collections";
 
 /**
  * Search for similar documents using a text query
@@ -23,19 +24,8 @@ export async function searchSimilarDocuments(
     // Generate embedding for the query text
     const queryEmbedding = await generateEmbedding(query);
 
-    // Perform similarity search using the embedding
-    const results = await collection.query({
-      queryEmbeddings: [queryEmbedding],
-      nResults: limit,
-      include: ["documents", "distances", "metadatas"] as any
-    });
-
-    return {
-      documents: (results.documents?.[0] || []).filter(Boolean) as string[],
-      distances: results.distances?.[0] || [],
-      metadatas: (results.metadatas?.[0] || []).filter(Boolean) as Record<string, any>[],
-      ids: results.ids?.[0] || []
-    };
+    // Perform similarity search using the embedding via collections module
+    return await querySimilar(collection, queryEmbedding, limit);
   } catch (error) {
     console.error("Error searching for similar documents:", error);
     throw new Error(`Failed to search for similar documents: ${error}`);

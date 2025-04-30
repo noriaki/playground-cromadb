@@ -1,17 +1,13 @@
 // src/db/collections.ts
 import { ChromaClient, Collection } from "chromadb";
-import { reportMemoryUsage } from "../utils/memory-monitor";
 
 const COLLECTION_NAME = "markdown_embeddings";
 
 /**
  * Get or create a collection for storing markdown embeddings
- * Optimized for consistent performance by cleaning up existing collection 
  */
 export async function getOrCreateCollection(client: ChromaClient): Promise<Collection> {
   try {
-    reportMemoryUsage("before_collection_creation");
-
     // Delete existing collection if it exists to avoid errors and ensure consistency
     try {
       const collections = await client.listCollections();
@@ -36,7 +32,6 @@ export async function getOrCreateCollection(client: ChromaClient): Promise<Colle
       }
     });
     
-    reportMemoryUsage("after_collection_creation");
     return collection;
   } catch (error) {
     console.error("Error creating collection:", error);
@@ -66,11 +61,6 @@ export async function upsertDocuments(
       throw new Error("Metadata array length must match ids array length");
     }
     
-    // Report memory usage for large batches
-    if (ids.length > 5) {
-      reportMemoryUsage(`before_upsert_${ids.length}_documents`);
-    }
-    
     // Clean metadata to ensure it only contains primitive types allowed by ChromaDB
     const cleanedMetadatas = metadatas ? metadatas.map(metadata => {
       const cleaned: Record<string, boolean | number | string> = {};
@@ -96,11 +86,6 @@ export async function upsertDocuments(
       embeddings,
       metadatas: cleanedMetadatas
     });
-    
-    // Report memory usage for large batches
-    if (ids.length > 5) {
-      reportMemoryUsage(`after_upsert_${ids.length}_documents`);
-    }
   } catch (error) {
     console.error("Error upserting documents:", error);
     throw error;
@@ -109,7 +94,6 @@ export async function upsertDocuments(
 
 /**
  * Perform similarity search on the collection
- * Optimized with more detailed error handling
  */
 export async function querySimilar(
   collection: Collection,
@@ -122,21 +106,17 @@ export async function querySimilar(
   metadatas: Record<string, any>[];
 }> {
   try {
-    reportMemoryUsage("before_query");
-    
     // Validate input
     if (!queryEmbedding || !queryEmbedding.length) {
       throw new Error("Invalid query embedding");
     }
     
-    // Perform query
+    // Perform query with proper types
     const results = await collection.query({
       queryEmbeddings: [queryEmbedding],
       nResults: limit,
-      include: ["documents", "distances", "metadatas"] as any
+      include: ["documents", "distances", "metadatas"]
     });
-    
-    reportMemoryUsage("after_query");
     
     // Format and validate results
     return {
