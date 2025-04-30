@@ -8,3 +8,15 @@ services:
     ports:
       - "8080:8000"
     restart: unless-stopped
+    # Resource limitations for optimization
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    environment:
+      - CHROMA_DB_IMPL=duckdb+parquet
+      - CHROMA_COLLECTION_CACHE_SIZE=1024
