@@ -63,3 +63,81 @@ graph TD
 
 - Use MCP server tools for basic GitHub Flow operations (branching, commit, PR creation).
 - Manual review and merge unless otherwise instructed.
+
+## Design and Requirements for Markdown Registration Speedup
+
+### 1. Introduce Parallel Processing
+- Process Markdown files in parallel at the file level to handle multiple files simultaneously.
+- Limit parallelism to CPU cores minus one to avoid resource contention.
+- Consider dynamic parallelism control based on file size or processing time.
+
+### 2. Optimize Batch Sizes
+- Dynamically adjust batch sizes for OpenAI embedding API based on memory usage.
+- Increase minimum batch size to reduce API call frequency.
+- Optimize batch sizes for ChromaDB upsert to reduce communication overhead.
+- Consider additional metrics like CPU load and API rate limits for batch size adjustment.
+
+### 3. Review Delays and GC Calls
+- Remove unnecessary fixed delays (e.g., 100ms wait).
+- Implement dynamic GC call strategies based on memory usage thresholds.
+- Reduce GC call frequency to minimize processing pauses.
+- Tune Node.js memory settings to alleviate GC pressure.
+
+### 4. Optimize Docker Resource Settings
+- Allocate sufficient CPU cores and memory (recommend 4 cores, 4GB+ RAM).
+- Optimize Docker volume mounts and network settings for better I/O performance.
+- Set environment variables for ChromaDB to improve performance:
+  - `CHROMA_DB_IMPL=duckdb+parquet`
+  - `CHROMA_COLLECTION_CACHE_SIZE=1024`
+
+## Performance Degradation Analysis and Improvement Proposals
+
+### Possible Causes of Performance Degradation
+- Overhead of parallel processing causing resource contention.
+- Aggressive batch size reduction increasing API call frequency.
+- Frequent GC invocations causing intermittent pauses.
+- Insufficient Docker resource allocation.
+- Inefficient file reading and chunk generation.
+- OpenAI API response latency and rate limiting.
+- Excessive logging causing I/O bottlenecks.
+
+### Improvement Proposals
+- Optimize parallelism level and implement dynamic control.
+- Refine batch size adjustment strategy with additional metrics.
+- Optimize GC invocation frequency and Node.js memory settings.
+- Increase Docker CPU and memory allocation.
+- Improve file processing efficiency and chunking logic.
+- Cache embeddings and optimize API usage.
+- Control logging verbosity and use asynchronous logging.
+
+## Updated Design and Requirements for Further Optimization
+
+### Embedding Model
+- Continue using `text-embedding-3-small` as per current implementation.
+- Consider future upgrade to `text-embedding-3-large` with resource increase.
+
+### Batch Size and Memory Limits
+- Increase batch size limits in code to improve throughput.
+- Adjust Node.js memory limits (e.g., `--max-old-space-size=16384`) to allow larger batch processing.
+- Recommend increasing Docker container memory allocation to at least 4GB.
+- Recommend increasing CPU allocation to 4 cores or more for better parallelism.
+
+### Chunk Size and Token Limits
+- Increase chunk sizes closer to OpenAI token limits to reduce total chunk count.
+- Balance chunk size to maintain semantic relevance and search accuracy.
+
+### Docker Configuration
+- Update `docker-compose.yml` to increase CPU and memory limits:
+  - CPUs: 4
+  - Memory: 4GB or higher
+- Optimize Docker volume mounts and network settings for improved I/O.
+
+### Implementation Notes for Developers
+- Update batch size constants in `src/embedding/openai.ts` and `src/processor.ts`.
+- Adjust Node.js runtime options in `package.json` scripts or deployment environment.
+- Coordinate Docker resource allocation changes with infrastructure team or deployment scripts.
+- Monitor memory usage and GC behavior after changes to fine-tune parameters.
+
+---
+
+This merged update consolidates all previous investigations and recent findings into a single, coherent document for implementers to follow.

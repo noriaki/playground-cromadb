@@ -21,11 +21,45 @@ export async function searchSimilarDocuments(
   ids: string[];
 }> {
   try {
+    // Validate input
+    if (!query || query.trim() === '') {
+      console.error("Empty query provided");
+      return {
+        documents: [],
+        distances: [],
+        metadatas: [],
+        ids: []
+      };
+    }
+
+    // Check if collection has documents
+    try {
+      const count = await collection.count();
+      if (count === 0) {
+        console.warn("Collection is empty. No results will be returned.");
+        return {
+          documents: [],
+          distances: [],
+          metadatas: [],
+          ids: []
+        };
+      }
+    } catch (countError) {
+      console.warn("Could not verify collection document count:", countError);
+      // Continue with search anyway
+    }
+
     // Generate embedding for the query text
+    console.log("Generating embedding for query...");
     const queryEmbedding = await generateEmbedding(query);
+    console.log("Embedding generated successfully");
 
     // Perform similarity search using the embedding via collections module
-    return await querySimilar(collection, queryEmbedding, limit);
+    console.log("Performing similarity search...");
+    const results = await querySimilar(collection, queryEmbedding, limit);
+    console.log(`Search completed. Found ${results.documents.length} results.`);
+
+    return results;
   } catch (error) {
     console.error("Error searching for similar documents:", error);
     throw new Error(`Failed to search for similar documents: ${error}`);

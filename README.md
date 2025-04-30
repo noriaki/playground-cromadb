@@ -55,10 +55,17 @@ docker compose up -d
 # TypeScriptのコンパイル
 pnpm build
 
-# アプリケーションの実行
+# Markdownファイルの処理と登録のみを実行
+pnpm dev:process
+# または
+node dist/processor.js
+
+# 検索機能のみを実行
+pnpm dev:search
+# または
 node dist/index.js
 
-# または開発モードで実行
+# 処理と検索を順番に実行（通常の使用方法）
 pnpm dev
 ```
 
@@ -95,7 +102,8 @@ docker compose down
   ├── tsconfig.json             # TypeScript設定
   ├── docker-compose.yml        # Docker設定
   ├── src/
-  │   ├── index.ts              # エントリーポイント
+  │   ├── index.ts              # 検索機能のエントリーポイント
+  │   ├── processor.ts          # Markdown処理と登録のエントリーポイント
   │   ├── config.ts             # 設定管理
   │   ├── db/
   │   │   ├── chroma-client.ts  # ChromaDBクライアント
@@ -123,16 +131,30 @@ docker compose down
 ## アーキテクチャ
 
 ```
-TypeScriptアプリケーション --> HTTP API (port 8080) --> ChromaDB Dockerコンテナ
-                          |
-                          v
-                      OpenAI API
+                                  ┌─> HTTP API (port 8080) ─> ChromaDB Dockerコンテナ
+                                  │
+Markdown処理モジュール (processor.ts) ─> OpenAI API
+                                  │
+                                  └─> 処理済みデータ
+                                        │
+                                        v
+検索モジュール (index.ts) ──────────────┘
+                │
+                v
+            OpenAI API
 ```
 
-1. TypeScriptアプリケーションがMarkdownファイルを読み込み
-2. OpenAI APIを使用してテキストをベクトル化
-3. HTTP経由（ポート8080）でChromaDBコンテナに接続し、ベクトルデータを保存
-4. 検索クエリもベクトル化し、類似検索を実行
+機能が分離されたアーキテクチャ：
+
+1. **Markdown処理モジュール (processor.ts)**
+   - Markdownファイルを読み込み
+   - OpenAI APIを使用してテキストをベクトル化
+   - HTTP経由（ポート8080）でChromaDBコンテナに接続し、ベクトルデータを保存
+
+2. **検索モジュール (index.ts)**
+   - ChromaDBに接続して保存されたベクトルデータにアクセス
+   - 検索クエリをベクトル化し、類似検索を実行
+   - 結果を表示
 
 ## 最適化戦略
 

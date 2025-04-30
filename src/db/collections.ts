@@ -8,30 +8,37 @@ const COLLECTION_NAME = "markdown_embeddings";
  */
 export async function getOrCreateCollection(client: ChromaClient): Promise<Collection> {
   try {
-    // Delete existing collection if it exists to avoid errors and ensure consistency
+    // Check if collection exists and reuse it
     try {
       const collections = await client.listCollections();
       if (collections.includes(COLLECTION_NAME)) {
-        console.log(`Existing collection ${COLLECTION_NAME} found. Deleting for clean reload.`);
-        await client.deleteCollection({ name: COLLECTION_NAME });
-        // Small delay to ensure deletion is complete
-        await new Promise(resolve => setTimeout(resolve, 500));
+        console.log(`Existing collection ${COLLECTION_NAME} found. Reusing it.`);
+        const collection = await client.getCollection({
+          name: COLLECTION_NAME
+        });
+
+        // Log the count of documents in the collection
+        const count = await collection.count();
+        console.log(`Collection contains ${count} documents.`);
+
+        return collection;
       }
     } catch (error) {
       console.log("Error checking existing collections:", error);
     }
-    
-    // Create new collection with optimized settings
+
+    // Create new collection if it doesn't exist
+    console.log(`Creating new collection: ${COLLECTION_NAME}`);
     const collection = await client.createCollection({
       name: COLLECTION_NAME,
-      metadata: { 
+      metadata: {
         description: "Embeddings of markdown files",
         created: new Date().toISOString(),
         contentType: "markdown",
         embeddingModel: "text-embedding-3-small"
       }
     });
-    
+
     return collection;
   } catch (error) {
     console.error("Error creating collection:", error);
@@ -56,11 +63,11 @@ export async function upsertDocuments(
     if (!ids.length || ids.length !== documents.length || ids.length !== embeddings.length) {
       throw new Error("Mismatched array lengths in upsertDocuments");
     }
-    
+
     if (metadatas && metadatas.length !== ids.length) {
       throw new Error("Metadata array length must match ids array length");
     }
-    
+
     // Clean metadata to ensure it only contains primitive types allowed by ChromaDB
     const cleanedMetadatas = metadatas ? metadatas.map(metadata => {
       const cleaned: Record<string, boolean | number | string> = {};
@@ -68,8 +75,8 @@ export async function upsertDocuments(
         Object.keys(metadata).forEach(key => {
           const value = metadata[key];
           if (
-            typeof value === 'string' || 
-            typeof value === 'number' || 
+            typeof value === 'string' ||
+            typeof value === 'number' ||
             typeof value === 'boolean'
           ) {
             cleaned[key] = value;
@@ -78,7 +85,7 @@ export async function upsertDocuments(
       }
       return cleaned;
     }) : Array(ids.length).fill({});
-    
+
     // Execute upsert operation with cleaned data
     await collection.upsert({
       ids,
@@ -110,14 +117,14 @@ export async function querySimilar(
     if (!queryEmbedding || !queryEmbedding.length) {
       throw new Error("Invalid query embedding");
     }
-    
+
     // Perform query with proper types
     const results = await collection.query({
       queryEmbeddings: [queryEmbedding],
       nResults: limit,
       include: [IncludeEnum.Documents, IncludeEnum.Distances, IncludeEnum.Metadatas]
     });
-    
+
     // Format and validate results
     return {
       ids: results.ids?.[0] || [],
