@@ -50,10 +50,10 @@ export function formatSearchResults(results: {
   let output = `Found ${results.documents.length} results:\n\n`;
 
   for (let i = 0; i < results.documents.length; i++) {
-    const distance = results.distances[i];
+    const distance = results.distances[i] || 0;
     const similarity = 1 - distance; // Convert distance to similarity score
     const metadata = results.metadatas[i] || {};
-    const id = results.ids[i];
+    const id = results.ids[i] || `result-${i+1}`;
 
     output += `Result ${i + 1} (Similarity: ${(similarity * 100).toFixed(2)}%):\n`;
     output += `ID: ${id}\n`;
@@ -62,9 +62,14 @@ export function formatSearchResults(results: {
       output += `Source: ${metadata.source}\n`;
     }
 
-    output += `Content: ${results.documents[i].substring(0, 200)}${
-      results.documents[i].length > 200 ? "..." : ""
-    }\n\n`;
+    const content = results.documents[i];
+    if (content) {
+      output += `Content: ${content.substring(0, 200)}${
+        content.length > 200 ? "..." : ""
+      }\n\n`;
+    } else {
+      output += "Content: [No content available]\n\n";
+    }
   }
 
   return output;

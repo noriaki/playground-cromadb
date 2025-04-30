@@ -97,13 +97,13 @@ async function processMarkdownFiles() {
           const embeddings = await generateEmbeddings(chunkTexts);
           
           // Process each chunk in the batch
-          const ids = [];
-          const documents = [];
-          const metadatas = [];
+          const ids: string[] = [];
+          const documents: string[] = [];
+          const metadatas: Record<string, any>[] = [];
           
           for (let j = 0; j < batchChunks.length; j++) {
             const chunk = batchChunks[j];
-            const embedding = embeddings[j];
+            if (!chunk) continue;
             
             // Create ID
             const id = `${filePath.replace(/[\/\\]/g, "_")}_chunk_${i+j+1}`;

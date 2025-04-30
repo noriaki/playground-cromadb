@@ -1,5 +1,5 @@
 // src/db/collections.ts
-import { ChromaClient, Collection } from "chromadb";
+import { ChromaClient, Collection, IncludeEnum } from "chromadb";
 
 const COLLECTION_NAME = "markdown_embeddings";
 
@@ -115,7 +115,7 @@ export async function querySimilar(
     const results = await collection.query({
       queryEmbeddings: [queryEmbedding],
       nResults: limit,
-      include: ["documents", "distances", "metadatas"]
+      include: [IncludeEnum.Documents, IncludeEnum.Distances, IncludeEnum.Metadatas]
     });
     
     // Format and validate results
