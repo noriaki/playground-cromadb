@@ -66,6 +66,20 @@ pnpm dev
 
 アプリケーションを実行すると、CLIインターフェースが表示されます。検索クエリを入力して、類似するMarkdownコンテンツを検索できます。
 
+### メモリプロファイリング
+
+メモリ使用量を分析するためのプロファイリングツールが含まれています：
+
+```bash
+# メモリプロファイリングの実行
+pnpm profile
+
+# エンベディング生成も含めたプロファイリング
+pnpm profile:embeddings
+```
+
+プロファイリング結果は `profiling_data` ディレクトリに保存されます。
+
 ### ChromaDBサーバーの停止
 
 ```bash
@@ -90,12 +104,19 @@ docker compose down
   │   │   └── openai.ts         # OpenAI Embedding管理
   │   ├── markdown/
   │   │   ├── loader.ts         # Markdownファイルローダー
-  │   │   └── parser.ts         # Markdownパーサー
+  │   │   ├── parser.ts         # Markdownパーサー
+  │   │   ├── semantic-parser.ts # セマンティック解析
+  │   │   └── adaptive-chunker.ts # 適応型チャンカー
+  │   ├── profiling/
+  │   │   └── memory-profile.ts # メモリプロファイリング
+  │   ├── utils/
+  │   │   └── memory-monitor.ts # メモリ使用量モニタリング
   │   └── search/
   │       └── query.ts          # 検索ロジック
   ├── data/
   │   └── markdown/             # サンプルMarkdownファイル
   ├── chroma_db/                # ChromaDB永続化ストレージ（Dockerにマウント）
+  ├── profiling_data/           # プロファイリング結果
   └── dist/                     # コンパイル済みJavaScriptファイル
 ```
 
@@ -113,9 +134,29 @@ TypeScriptアプリケーション --> HTTP API (port 8080) --> ChromaDB Docker�
 3. HTTP経由（ポート8080）でChromaDBコンテナに接続し、ベクトルデータを保存
 4. 検索クエリもベクトル化し、類似検索を実行
 
+## 最適化戦略
+
+このプロジェクトでは、以下の戦略で処理の最適化を行っています：
+
+### メモリ使用効率の向上
+- ストリーミング処理によるメモリ効率の改善
+- 適切なチャンクサイズでの処理
+- 明示的なGCヒントの提供
+
+### セマンティック処理の強化
+- Markdownの構造を認識したチャンキング
+- 文脈を保持した適応的なチャンクサイズ調整
+- 意味的な関連性を保つオーバーラップ戦略
+
+### パフォーマンス分析
+- メモリ使用量のリアルタイムモニタリング
+- 処理戦略の比較分析
+- ヒープスナップショットによるメモリリークの検出
+
 ## トラブルシューティング
 
 - **OPENAI_API_KEY not set error**: .envファイルにAPIキーが正しく設定されているか確認してください。
 - **ChromaDB client connection error**: ChromaDBサーバーが起動しているか確認してください。`docker compose ps`で状態を確認できます。
 - **Database permission errors**: chroma_dbディレクトリの権限を確認してください。
 - **Database corruption**: 問題が発生した場合は、`chroma_db`ディレクトリを削除して新しく作成することができますが、すべてのインデックスデータが削除されることに注意してください。
+- **Memory issues**: Node.jsのメモリ制限を調整するか、チャンクサイズを小さくすることを検討してください。プロファイリングツールを使用してボトルネックを特定できます。

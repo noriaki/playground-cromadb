@@ -8,20 +8,33 @@ import {
   createMarkdownFileStream,
   processMarkdownFileByChunk
 } from "./markdown/loader";
-import { processMarkdown, markdownToText, chunkText } from "./markdown/parser";
+import { markdownToText, chunkText } from "./markdown/parser";
+import { parseMarkdownStructure } from "./markdown/semantic-parser";
+import { createAdaptiveNodeChunks } from "./markdown/adaptive-chunker";
+import { reportMemoryUsage, MemoryTracker } from "./utils/memory-monitor";
 import { searchSimilarDocuments, formatSearchResults } from "./search/query";
 import * as fs from "fs";
+import * as path from "path";
 
 // Default directory for markdown files
 const MARKDOWN_DIR = "data/markdown";
+// Profile directory for saving memory stats
+const PROFILE_OUTPUT_DIR = "profiling_data/semantic_impl_fixed";
 
 /**
  * Process markdown files and add them to the database
  */
 async function processMarkdownFiles() {
+  // Initialize memory tracker for comprehensive profiling
+  const memoryTracker = new MemoryTracker(5000); // Report every 5 seconds
+  memoryTracker.measure("startup", true);
+
   try {
     console.log("Starting ChromaDB with OpenAI embeddings for Markdown files...");
-    console.log("Using memory-optimized streaming approach to prevent heap errors");
+    console.log("Using optimized semantic processing for improved quality and memory efficiency");
+    
+    // Monitor memory usage
+    reportMemoryUsage("startup");
 
     // 1. Load configuration and environment variables
     const apiKey = getOpenAIApiKey();
@@ -49,116 +62,138 @@ async function processMarkdownFiles() {
       return;
     }
 
-    // 5. Process each file using streaming approach
+    reportMemoryUsage("before_processing");
+    memoryTracker.measure("before_processing");
+    
+    // Create profile directory if it doesn't exist
+    if (!fs.existsSync(PROFILE_OUTPUT_DIR)) {
+      fs.mkdirSync(PROFILE_OUTPUT_DIR, { recursive: true });
+    }
+    
+    // 5. Process each file using semantic parsing and adaptive chunking
+    let totalChunks = 0;
     for (const filePath of markdownPaths) {
-      console.log(`Processing ${filePath} using streaming approach...`);
-
-      // Process file in chunks to avoid loading entire file into memory
-      let fileContent = '';
-      let chunkCounter = 0;
-
-      // Define chunk processing function
-      const processFileChunk = async (chunk: string) => {
-        // Accumulate content
-        fileContent += chunk;
-
-        // When we have enough content, process it
-        if (fileContent.length >= 5000) { // Process in 5KB chunks
-          // Convert markdown to text
-          const text = markdownToText(fileContent);
-
-          // Create smaller chunks for embedding
-          const textChunks = chunkText(text);
-          console.log(`Created ${textChunks.length} text chunks from file chunk`);
-
-          // Process each text chunk individually to minimize memory usage
-          for (const textChunk of textChunks) {
-            try {
-              // Generate embedding for single chunk
-              console.log(`Processing text chunk ${++chunkCounter} from ${filePath}`);
-              const embedding = await generateEmbedding(textChunk);
-
-              // Create ID and metadata
-              const id = `${filePath.replace(/[\/\\]/g, "_")}_chunk_${chunkCounter}`;
-              const metadata = { source: filePath };
-
-              // Upsert single chunk into ChromaDB
-              await upsertDocuments(collection, [id], [textChunk], [embedding], [metadata]);
-              console.log(`Upserted chunk ${chunkCounter} from ${filePath}`);
-
-              // Explicitly help garbage collection
-              // Note: We can't modify string length, but we can dereference it
-              // Let the variables be garbage collected naturally
-
-              // Add a small delay to allow for GC
-              await new Promise(resolve => setTimeout(resolve, 50));
-            } catch (error) {
-              console.error(`Error processing text chunk ${chunkCounter}:`, error);
-              throw error;
-            }
-          }
-
-          // Reset accumulated content but keep a small overlap
-          const overlapSize = 200;
-          fileContent = fileContent.slice(-overlapSize);
-
-          // Explicitly help garbage collection
-          textChunks.length = 0;
-          // Try to force garbage collection if available
-          if (typeof global.gc === 'function') {
-            try {
-              global.gc();
-            } catch (e) {
-              // Ignore if gc is not available
-            }
-          }
-        }
-      };
-
-      // Process the file using streaming
+      const fileName = path.basename(filePath);
+      console.log(`Processing ${filePath} using optimized semantic approach...`);
+      memoryTracker.measure(`file_start_${fileName}`);
+      
       try {
-        await processMarkdownFileByChunk(filePath, 1024, processFileChunk);
-
-        // Process any remaining content
-        if (fileContent.length > 0) {
-          const text = markdownToText(fileContent);
-          const textChunks = chunkText(text);
-
-          for (const textChunk of textChunks) {
-            const embedding = await generateEmbedding(textChunk);
-            const id = `${filePath.replace(/[\/\\]/g, "_")}_chunk_${++chunkCounter}`;
-            const metadata = { source: filePath };
-            await upsertDocuments(collection, [id], [textChunk], [embedding], [metadata]);
-            console.log(`Upserted final chunk ${chunkCounter} from ${filePath}`);
+        // Read file content with stream to reduce memory pressure
+        let fileContent = '';
+        await processMarkdownFileByChunk(
+          filePath,
+          4096, // Use slightly larger chunks for more efficient processing
+          async (chunk) => {
+            fileContent += chunk;
           }
-        }
-
-        console.log(`Completed processing ${filePath} with ${chunkCounter} total chunks`);
-
-        // Explicitly help garbage collection
+        );
+        
+        memoryTracker.measure(`file_read_${fileName}`);
+        
+        // Parse markdown into semantic structure
+        const nodes = parseMarkdownStructure(fileContent);
+        memoryTracker.measure(`parsing_${fileName}`);
+        
+        // Help garbage collection
         fileContent = '';
-        // Try to force garbage collection if available
         if (typeof global.gc === 'function') {
-          try {
-            global.gc();
-          } catch (e) {
-            // Ignore if gc is not available
+          try { global.gc(); } catch (e) {}
+        }
+        
+        // Create adaptive chunks with semantic awareness
+        const chunks = createAdaptiveNodeChunks(nodes, {
+          source: filePath,
+          targetSize: 700,    // Target chunk size
+          minSize: 300,       // Minimum chunk size
+          maxSize: 1000,      // Maximum chunk size
+          overlapSize: 100    // Overlap between chunks
+        });
+        
+        memoryTracker.measure(`chunking_${fileName}`);
+        console.log(`Created ${chunks.length} semantic chunks from ${filePath}`);
+        totalChunks += chunks.length;
+        
+        // Process each chunk and generate embeddings - use batching for efficiency
+        const BATCH_SIZE = 3; // Process multiple chunks in batches to reduce API calls
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+          const batchChunks = chunks.slice(i, i + BATCH_SIZE);
+          const chunkTexts = batchChunks.map(chunk => chunk.text);
+          
+          console.log(`Processing batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(chunks.length/BATCH_SIZE)} from ${filePath}`);
+          memoryTracker.measure(`batch_start_${fileName}_${i}`);
+          
+          // Generate embeddings for the batch
+          const embeddings = await generateEmbeddings(chunkTexts);
+          
+          // Process each chunk in the batch
+          const ids = [];
+          const documents = [];
+          const metadatas = [];
+          
+          for (let j = 0; j < batchChunks.length; j++) {
+            const chunk = batchChunks[j];
+            const embedding = embeddings[j];
+            
+            // Create ID
+            const id = `${filePath.replace(/[\/\\]/g, "_")}_chunk_${i+j+1}`;
+            chunk.id = id;
+            
+            ids.push(id);
+            documents.push(chunk.text);
+            metadatas.push(chunk.metadata);
+          }
+          
+          // Batch upsert into ChromaDB
+          await upsertDocuments(collection, ids, documents, embeddings, metadatas);
+          console.log(`Upserted batch ${Math.floor(i/BATCH_SIZE) + 1} from ${filePath}`);
+          
+          memoryTracker.measure(`batch_end_${fileName}_${i}`);
+          
+          // Add a small delay between batches to allow for GC
+          if (i + BATCH_SIZE < chunks.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          
+          // Help garbage collection
+          if (typeof global.gc === 'function') {
+            try { global.gc(); } catch (e) {}
           }
         }
-
+        
+        // Report memory after each file
+        reportMemoryUsage(`after_processing_${filePath}`);
+        memoryTracker.measure(`file_end_${fileName}`, true);
+        
       } catch (error) {
         console.error(`Error processing file ${filePath}:`, error);
-        throw error;
+        // Continue with next file
       }
     }
 
-    console.log("All Markdown files processed successfully");
+    console.log(`All Markdown files processed successfully (${totalChunks} total chunks)`);
+    reportMemoryUsage("after_processing_all");
+    memoryTracker.measure("after_processing_all", true);
+    
+    // Export memory tracking data
+    const memoryDataFile = path.join(PROFILE_OUTPUT_DIR, `memory_profile_${Date.now()}.json`);
+    await memoryTracker.exportToFile(memoryDataFile);
+    console.log(`Memory profile saved to: ${memoryDataFile}`);
 
     // 6. Perform similarity search via CLI
     await performSearch(collection);
 
   } catch (error) {
     console.error("Error processing markdown files:", error);
+    
+    // Try to save memory profile even on error
+    try {
+      const errorFile = path.join(PROFILE_OUTPUT_DIR, `error_profile_${Date.now()}.json`);
+      await memoryTracker.exportToFile(errorFile);
+      console.log(`Error memory profile saved to: ${errorFile}`);
+    } catch (e) {
+      console.error("Failed to save error profile:", e);
+    }
+    
     process.exit(1);
   }
 }
