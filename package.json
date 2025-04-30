@@ -5,7 +5,9 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "NODE_OPTIONS=--max-old-space-size=8192 pnpm exec ts-node src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "profile": "NODE_OPTIONS='--max-old-space-size=8192 --inspect --expose-gc' pnpm exec ts-node src/profiling/memory-profile.ts",
+    "profile:embeddings": "NODE_OPTIONS='--max-old-space-size=8192 --inspect --expose-gc' TEST_EMBEDDINGS=true pnpm exec ts-node src/profiling/memory-profile.ts"
   },
   "dependencies": {
     "chromadb": "^2.3.0",
