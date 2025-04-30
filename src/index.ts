@@ -68,6 +68,15 @@ async function initializeSearch() {
     const collection = await getOrCreateCollection(client);
     console.log(`Collection '${collection.name}' ready`);
 
+    // Check if collection has documents
+    const count = await collection.count();
+    console.log(`Collection contains ${count} documents.`);
+
+    if (count === 0) {
+      console.log("Warning: Collection is empty. Please run 'pnpm dev:process' first to process and index Markdown files.");
+      console.log("Continuing with search interface, but no results will be returned until documents are indexed.");
+    }
+
     // 4. Perform similarity search via CLI
     await performSearch(collection);
 
