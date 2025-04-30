@@ -108,28 +108,27 @@ export class MemoryTracker {
    */
   async takeHeapSnapshot(label: string): Promise<string | null> {
     try {
-      // Attempt to dynamically import heapdump
-      const heapdump = await import('heapdump').catch(() => null);
+      console.log('Heap snapshots require the heapdump module. You can install it with: npm install heapdump');
+      console.log('This functionality is currently disabled for compatibility.');
       
-      if (!heapdump) {
-        console.warn('heapdump module not available. Install it with: npm install heapdump');
-        return null;
-      }
+      // Just create a placeholder file
+      const filename = `heap-${label}-${Date.now()}.txt`;
       
-      const filename = `heap-${label}-${Date.now()}.heapsnapshot`;
+      // We'll implement a simpler alternative here
+      const fs = require('fs');
+      const memoryUsage = process.memoryUsage();
+      const content = `Memory snapshot at ${new Date().toISOString()}\n` +
+        `Label: ${label}\n` +
+        `RSS: ${Math.round(memoryUsage.rss / 1024 / 1024)} MB\n` +
+        `Heap Total: ${Math.round(memoryUsage.heapTotal / 1024 / 1024)} MB\n` + 
+        `Heap Used: ${Math.round(memoryUsage.heapUsed / 1024 / 1024)} MB\n` +
+        `External: ${Math.round(memoryUsage.external / 1024 / 1024)} MB\n`;
       
-      return new Promise((resolve, reject) => {
-        heapdump.writeSnapshot(filename, (err: any, filename: string) => {
-          if (err) {
-            reject(err);
-          } else {
-            console.log(`Heap snapshot written to ${filename}`);
-            resolve(filename);
-          }
-        });
-      });
+      fs.writeFileSync(filename, content);
+      console.log(`Basic memory info written to ${filename}`);
+      return filename;
     } catch (error) {
-      console.error('Failed to take heap snapshot:', error);
+      console.error('Failed to take memory snapshot:', error);
       return null;
     }
   }
