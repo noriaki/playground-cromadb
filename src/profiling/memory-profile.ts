@@ -113,10 +113,10 @@ async function runMemoryProfiler() {
         };
         
         memoryTracker.measure(`strategy1_${fileName}_end`, true);
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Error in Strategy 1 for ${fileName}:`, error);
         stats.strategies.original = {
-          error: error.message,
+          error: error.message || String(error),
           success: false
         };
       }
@@ -165,10 +165,10 @@ async function runMemoryProfiler() {
         };
         
         memoryTracker.measure(`strategy2_${fileName}_end`, true);
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Error in Strategy 2 for ${fileName}:`, error);
         stats.strategies.streaming = {
-          error: error.message,
+          error: error.message || String(error),
           success: false
         };
       }
@@ -203,10 +203,10 @@ async function runMemoryProfiler() {
         };
         
         memoryTracker.measure(`strategy3_${fileName}_end`, true);
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Error in Strategy 3 for ${fileName}:`, error);
         stats.strategies.semantic = {
-          error: error.message,
+          error: error.message || String(error),
           success: false
         };
       }
