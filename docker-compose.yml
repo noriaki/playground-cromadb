@@ -12,11 +12,11 @@ services:
     deploy:
       resources:
         limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
           cpus: '2'
           memory: 2G
-        reservations:
-          cpus: '1'
-          memory: 1G
     environment:
       - CHROMA_DB_IMPL=duckdb+parquet
       - CHROMA_COLLECTION_CACHE_SIZE=1024

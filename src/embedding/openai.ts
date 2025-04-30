@@ -13,15 +13,15 @@ const EMBEDDING_MODEL = "text-embedding-3-small";
 
 // Default batch size for processing embeddings to reduce API calls
 // Dynamically adjustable default batch size
-const DEFAULT_BATCH_SIZE = 8;
+const DEFAULT_BATCH_SIZE = 32;
 
 // Maximum number of embeddings per API call (OpenAI limit is 2048)
-// Actual limit is 2048, but we set it to 20 for safety margin
-const MAX_OPENAI_BATCH_SIZE = 20;
+// Actual limit is 2048, but we set it to 100 for safety margin
+const MAX_OPENAI_BATCH_SIZE = 100;
 
 // Thresholds for dynamic batch size adjustment based on memory usage
-const MEMORY_THRESHOLD_HIGH = 80; // 80% of available memory
-const MEMORY_THRESHOLD_LOW = 40;  // 40% of available memory
+const MEMORY_THRESHOLD_HIGH = 85; // 85% of available memory
+const MEMORY_THRESHOLD_LOW = 50;  // 50% of available memory
 
 /**
  * Generate embeddings for a batch of texts using OpenAI's text-embedding-3-small model
@@ -52,10 +52,10 @@ function adjustBatchSizeBasedOnMemory(currentBatchSize: number): number {
 
   if (memoryUsage > MEMORY_THRESHOLD_HIGH) {
     // Decrease batch size when memory usage is high
-    return Math.max(1, Math.floor(currentBatchSize * 0.7));
+    return Math.max(4, Math.floor(currentBatchSize * 0.7));
   } else if (memoryUsage < MEMORY_THRESHOLD_LOW) {
     // Increase batch size when memory usage is low
-    return Math.min(MAX_OPENAI_BATCH_SIZE, Math.ceil(currentBatchSize * 1.3));
+    return Math.min(MAX_OPENAI_BATCH_SIZE, Math.ceil(currentBatchSize * 1.5));
   }
 
   // Maintain current batch size when memory usage is within acceptable range
@@ -115,8 +115,8 @@ export async function generateEmbeddings(
         response.data.length = 0;
       }
 
-      // Only run garbage collection when memory usage is high
-      if (getMemoryUsagePercent() > 70 && typeof global.gc === 'function') {
+      // Only run garbage collection when memory usage is very high
+      if (getMemoryUsagePercent() > 80 && typeof global.gc === 'function') {
         try {
           console.log("Running garbage collection due to high memory usage");
           global.gc();

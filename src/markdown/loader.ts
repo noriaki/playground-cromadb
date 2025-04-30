@@ -104,40 +104,48 @@ export async function processMarkdownFileByChunk(
     try {
       const fileStream = createMarkdownFileStream(filePath);
       let buffer = '';
+      let processingPromise = Promise.resolve();
 
-      fileStream.on('data', async (chunk: string) => {
-        fileStream.pause(); // Pause the stream while processing
-
+      // Use a more efficient approach with backpressure handling
+      fileStream.on('data', (chunk: string) => {
         buffer += chunk;
 
-        // Process complete chunks
+        // If buffer exceeds twice the chunk size, apply backpressure
+        if (buffer.length > chunkSize * 2) {
+          fileStream.pause();
+        }
+
+        // Process complete chunks without waiting for each one to complete
         while (buffer.length >= chunkSize) {
           const processChunk = buffer.slice(0, chunkSize);
           buffer = buffer.slice(chunkSize);
 
-          try {
-            await chunkProcessor(processChunk);
-          } catch (error) {
-            fileStream.destroy();
-            reject(error);
-            return;
-          }
+          // Chain promises to ensure order but don't block the event loop
+          processingPromise = processingPromise
+            .then(() => chunkProcessor(processChunk))
+            .then(() => {
+              // Resume stream if it was paused and buffer is now manageable
+              if (!fileStream.readableFlowing && buffer.length < chunkSize) {
+                fileStream.resume();
+              }
+            })
+            .catch(error => {
+              fileStream.destroy();
+              reject(error);
+            });
         }
-
-        fileStream.resume(); // Resume the stream after processing
       });
 
-      fileStream.on('end', async () => {
+      fileStream.on('end', () => {
         // Process any remaining data
         if (buffer.length > 0) {
-          try {
-            await chunkProcessor(buffer);
-          } catch (error) {
-            reject(error);
-            return;
-          }
+          processingPromise = processingPromise
+            .then(() => chunkProcessor(buffer))
+            .then(() => resolve())
+            .catch(error => reject(error));
+        } else {
+          processingPromise.then(() => resolve()).catch(error => reject(error));
         }
-        resolve();
       });
 
       fileStream.on('error', (err) => {

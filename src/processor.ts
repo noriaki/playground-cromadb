@@ -15,10 +15,13 @@ const MARKDOWN_DIR = "data/markdown";
 
 // Maximum number of files to process in parallel
 // Default to number of CPU cores minus 1 (to leave one core for system operations)
-const MAX_PARALLEL_FILES = Math.max(1, os.cpus().length - 1);
+const MAX_PARALLEL_FILES = Math.max(2, os.cpus().length - 1);
 
 // Maximum number of chunks to process in a single batch for ChromaDB upsert
-const MAX_CHROMADB_BATCH_SIZE = 20;
+const MAX_CHROMADB_BATCH_SIZE = 50;
+
+// Maximum number of chunks to process in parallel for embedding generation
+const MAX_PARALLEL_CHUNKS = 3;
 
 /**
  * Process markdown files and add them to the database
@@ -69,11 +72,11 @@ export async function processMarkdownFiles() {
         console.log(`Processing ${filePath} using optimized semantic approach...`);
 
         try {
-          // Read file content with stream to reduce memory pressure
+          // Read file content with stream to reduce memory pressure - larger chunk size for better I/O efficiency
           let fileContent = '';
           await processMarkdownFileByChunk(
             filePath,
-            4096, // Use slightly larger chunks for more efficient processing
+            8192, // Use larger chunks for more efficient I/O processing
             async (chunk) => {
               fileContent += chunk;
             }
@@ -85,13 +88,13 @@ export async function processMarkdownFiles() {
           // Help garbage collection
           fileContent = '';
 
-          // Create adaptive chunks with semantic awareness
+          // Create adaptive chunks with semantic awareness - larger chunks for better efficiency
           const chunks = createAdaptiveNodeChunks(nodes, {
             source: filePath,
-            targetSize: 700,    // Target chunk size
-            minSize: 300,       // Minimum chunk size
-            maxSize: 1000,      // Maximum chunk size
-            overlapSize: 100    // Overlap between chunks
+            targetSize: 1000,   // Target chunk size (increased)
+            minSize: 500,       // Minimum chunk size (increased)
+            maxSize: 1500,      // Maximum chunk size (increased)
+            overlapSize: 150    // Overlap between chunks (increased)
           });
 
           console.log(`Created ${chunks.length} semantic chunks from ${filePath}`);
@@ -127,17 +130,42 @@ export async function processMarkdownFiles() {
 
       // Process chunks in optimized batches for embedding generation and DB upsert
       // Use larger batch sizes for efficiency while staying within limits
-      const EMBEDDING_BATCH_SIZE = 8; // Starting batch size, will be adjusted dynamically
+      const EMBEDDING_BATCH_SIZE = 32; // Starting batch size, will be adjusted dynamically
 
-      // Group chunks into batches for processing
+      // Group chunks into batches for processing with parallel embedding generation
       for (let j = 0; j < allChunks.length; j += MAX_CHROMADB_BATCH_SIZE) {
         const chunkBatch = allChunks.slice(j, j + MAX_CHROMADB_BATCH_SIZE);
-        const chunkTexts = chunkBatch.map(chunk => chunk.text);
-
         console.log(`Processing chunk batch ${Math.floor(j/MAX_CHROMADB_BATCH_SIZE) + 1}/${Math.ceil(allChunks.length/MAX_CHROMADB_BATCH_SIZE)} with ${chunkBatch.length} chunks`);
 
-        // Generate embeddings for the batch with dynamic batch sizing
-        const embeddings = await generateEmbeddings(chunkTexts, EMBEDDING_BATCH_SIZE);
+        // Process embeddings in parallel sub-batches for better throughput
+        const embeddings: number[][] = [];
+
+        // Split into smaller parallel batches
+        for (let k = 0; k < chunkBatch.length; k += MAX_PARALLEL_CHUNKS * EMBEDDING_BATCH_SIZE) {
+          const parallelBatches: string[][] = [];
+
+          // Create parallel batches
+          for (let p = 0; p < MAX_PARALLEL_CHUNKS; p++) {
+            const startIdx = k + (p * EMBEDDING_BATCH_SIZE);
+            const endIdx = Math.min(startIdx + EMBEDDING_BATCH_SIZE, chunkBatch.length);
+
+            if (startIdx < chunkBatch.length) {
+              const batchTexts = chunkBatch.slice(startIdx, endIdx).map(chunk => chunk.text);
+              parallelBatches.push(batchTexts);
+            }
+          }
+
+          // Process parallel batches
+          const batchResults = await Promise.all(
+            parallelBatches.filter(batch => batch.length > 0)
+              .map(batchTexts => generateEmbeddings(batchTexts, EMBEDDING_BATCH_SIZE))
+          );
+
+          // Collect results
+          batchResults.forEach(result => {
+            embeddings.push(...result);
+          });
+        }
 
         // Prepare data for ChromaDB upsert
         const ids: string[] = [];
@@ -165,7 +193,7 @@ export async function processMarkdownFiles() {
         const memoryUsage = process.memoryUsage();
         const heapUsedPercent = (memoryUsage.heapUsed / memoryUsage.heapTotal) * 100;
 
-        if (heapUsedPercent > 70 && typeof global.gc === 'function') {
+        if (heapUsedPercent > 80 && typeof global.gc === 'function') {
           console.log(`Running garbage collection due to high memory usage (${Math.round(heapUsedPercent)}%)`);
           try { global.gc(); } catch (e) {}
         }
